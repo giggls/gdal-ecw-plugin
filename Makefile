@@ -43,4 +43,4 @@ $(OBJ) $(O_OBJ): gdal_ecw.h $(HOME)/hexagon
 plugin: $(PLUGIN_SO)
 
 $(PLUGIN_SO): $(OBJ) $(HOME)/hexagon
-	g++ -shared $(LNK_FLAGS) $(OBJ) $(CONFIG_LIBS) $(ECW_STATIC) -o $(PLUGIN_SO)
+	g++ -shared -o $(PLUGIN_SO) $(LNK_FLAGS) $(OBJ) $(ECW_STATIC) -lgdal
