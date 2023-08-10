@@ -13,7 +13,7 @@ ECW_FLAGS = -DHAVE_ECW_BUILDNUMBER_H -DLINUX -DX86 -DPOSIX -DHAVE_COMPRESS -DECW
 OBJ = ecwdataset.o ecwcreatecopy.o jp2userbox.o ecwasyncreader.o
 
 GDAL_INCLUDE = /usr/include/gdal
-AUTOLOAD_DIR = /usr/lib/gdalplugins/
+AUTOLOAD_DIR = /usr/lib/x86_64-linux-gnu/gdalplugins
 
 #CPPFLAGS := $(GDAL_INCLUDE) -DFRMT_ecw $(CPPFLAGS) $(ECW_FLAGS) $(ECW_INCLUDE) $(EXTRA_CFLAGS)
 
