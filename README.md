@@ -1,6 +1,8 @@
-# Most simple ECW support for gdal on Debian 11 (bullseye)
+# Most simple ECW support for gdal on Debian 12 (bookworm)
 
 Hugely based on https://github.com/interob/libgdal-ecw
+
+This will also work on Debian 11 oldstable (bullseye)
 
 ## Rationale
 
