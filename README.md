@@ -1,8 +1,6 @@
-# Most simple ECW support for gdal on Debian 12 (bookworm)
+# Most simple ECW support for gdal on Debian 13 (bookworm)
 
-Hugely based on https://github.com/interob/libgdal-ecw
-
-This will also work on Debian 11 oldstable (bullseye)
+Partly based on https://github.com/interob/libgdal-ecw
 
 ## Rationale
 
@@ -11,7 +9,8 @@ tend to care about storage space. For this reason customers often supply
 their data in compressed form.
 
 Unfortunately this often means that they use the patented and proprietary
-ECW-format.
+ECW-format. There are tricks to get a comparable compression rate when using
+GeoTiff but this is seems to be largely unknown.
 
 ## To the recue
 
@@ -21,7 +20,7 @@ http://download.hexagongeospatial.com/downloads/ecw/erdas-ecw-jp2-sdk-v5-5-updat
 This said all you usually need in the world of FOSS GIS Software is support
 in [GDAL](https://gdal.org/) thus this code will build a single self-sufficient
 Plugin for GDAL using the proprietary ECW library which can be copied to /usr/lib/gdalplugins/
-on Debian/Ubuntu based distributions.
+on Debian based distributions.
 
 ## Installation
 

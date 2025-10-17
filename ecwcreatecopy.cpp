@@ -8,23 +8,7 @@
  * Copyright (c) 2001, 2004, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 // ncsjpcbuffer.h needs the min and max macros.
@@ -34,7 +18,7 @@
 #include "gdaljp2metadata.h"
 #include "ogr_spatialref.h"
 
-#if defined(FRMT_ecw) && defined(HAVE_COMPRESS)
+#if defined(HAVE_COMPRESS)
 
 #define OPTIMIZED_FOR_GDALWARP
 
@@ -53,7 +37,7 @@ static CPLString GetCompressionSoftwareName()
     if (CPLGetExecPath(szProcessName, sizeof(szProcessName) - 1))
     {
         szProcessName[sizeof(szProcessName) - 1] = 0;
-#ifdef WIN32
+#ifdef _WIN32
         char *szLastSlash = strrchr(szProcessName, '\\');
 #else
         char *szLastSlash = strrchr(szProcessName, '/');
@@ -593,6 +577,7 @@ CPLErr GDALECWCompressor::ourWriteLineBIL(UINT16 nBands, void **ppOutputLine,
     }
     return CE_None;
 }
+
 /************************************************************************/
 /*                             Initialize()                             */
 /*                                                                      */
@@ -1032,10 +1017,33 @@ CPLErr GDALECWCompressor::Initialize(
                 const char *pszGMLJP2V2Def =
                     CSLFetchNameValue(papszOptions, "GMLJP2V2_DEF");
                 if (pszGMLJP2V2Def != nullptr)
+                {
                     WriteJP2Box(oJP2MD.CreateGMLJP2V2(nXSize, nYSize,
                                                       pszGMLJP2V2Def, poSrcDS));
+                }
                 else
-                    WriteJP2Box(oJP2MD.CreateGMLJP2(nXSize, nYSize));
+                {
+                    if (!poSRS || poSRS->IsEmpty() ||
+                        GDALJP2Metadata::IsSRSCompatible(poSRS))
+                    {
+                        WriteJP2Box(oJP2MD.CreateGMLJP2(nXSize, nYSize));
+                    }
+                    else if (CSLFetchNameValue(papszOptions, "GMLJP2"))
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "GMLJP2 box was explicitly required but "
+                                 "cannot be written due "
+                                 "to lack of georeferencing and/or unsupported "
+                                 "georeferencing "
+                                 "for GMLJP2");
+                    }
+                    else
+                    {
+                        CPLDebug(
+                            "JP2ECW",
+                            "Cannot write GMLJP2 box due to unsupported SRS");
+                    }
+                }
             }
             if (CPLFetchBool(papszOptions, "GeoJP2", true))
                 WriteJP2Box(oJP2MD.CreateJP2GeoTIFF());
@@ -1203,7 +1211,7 @@ CPLErr GDALECWCompressor::Initialize(
     {
         if (fpVSIL == nullptr)
         {
-#if ECWSDK_VERSION >= 40 && defined(WIN32)
+#if ECWSDK_VERSION >= 40 && defined(_WIN32)
             if (CPLTestBool(CPLGetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")))
             {
                 wchar_t *pwszFilename =
@@ -1391,16 +1399,13 @@ static GDALDataset *ECWCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     oCompressor.pProgressData = pProgressData;
     oCompressor.m_poSrcDS = poSrcDS;
 
-    if (!pfnProgress(0.0, nullptr, pProgressData))
-        return nullptr;
-
-    char **papszBandDescriptions = (char **)CPLMalloc(nBands * sizeof(char *));
+    CPLStringList aosBandDescriptions;
     for (int i = 0; i < nBands; i++)
     {
         /* Make a copy since ECWGetColorInterpretationName() can return a string
          * generated */
         /* by CPLSPrintf(), which has just a few rotating entries. */
-        papszBandDescriptions[i] = CPLStrdup(ECWGetColorInterpretationName(
+        aosBandDescriptions.AddString(ECWGetColorInterpretationName(
             poSrcDS->GetRasterBand(i + 1)->GetColorInterpretation(), i));
     }
 
@@ -1409,29 +1414,27 @@ static GDALDataset *ECWCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         pszAreaOrPoint != nullptr && EQUAL(pszAreaOrPoint, GDALMD_AOP_POINT);
 
     if (oCompressor.Initialize(pszFilename, papszOptions, nXSize, nYSize,
-                               nBands, papszBandDescriptions, bRGBColorSpace,
-                               eType, poSRS, adfGeoTransform,
+                               nBands, aosBandDescriptions.List(),
+                               bRGBColorSpace, eType, poSRS, adfGeoTransform,
                                poSrcDS->GetGCPCount(), poSrcDS->GetGCPs(),
                                bIsJPEG2000, bPixelIsPoint,
                                poSrcDS->GetMetadata("RPC"), poSrcDS) != CE_None)
     {
-        for (int i = 0; i < nBands; i++)
-            CPLFree(papszBandDescriptions[i]);
-        CPLFree(papszBandDescriptions);
         return nullptr;
     }
 
     /* -------------------------------------------------------------------- */
     /*      Start the compression.                                          */
     /* -------------------------------------------------------------------- */
+
+    if (!pfnProgress(0.0, nullptr, pProgressData))
+        return nullptr;
+
     CNCSError oErr = oCompressor.Write();
 
     if (oErr.GetErrorNumber() != NCS_SUCCESS)
     {
         ECWReportError(oErr);
-        for (int i = 0; i < nBands; i++)
-            CPLFree(papszBandDescriptions[i]);
-        CPLFree(papszBandDescriptions);
         return nullptr;
     }
 
@@ -1439,9 +1442,6 @@ static GDALDataset *ECWCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /*      Cleanup, and return read-only handle.                           */
     /* -------------------------------------------------------------------- */
     oCompressor.CloseDown();
-    for (int i = 0; i < nBands; i++)
-        CPLFree(papszBandDescriptions[i]);
-    CPLFree(papszBandDescriptions);
     pfnProgress(1.001, nullptr, pProgressData);
 
     /* -------------------------------------------------------------------- */
@@ -1704,6 +1704,7 @@ class IRasterIORequest
                           nDataTypeSize, nBufXSize);
         }
     }
+
     ~IRasterIORequest()
     {
         CPLFree(pabyData);
@@ -1743,7 +1744,7 @@ class ECWWriteDataset final : public GDALDataset
                     char **papszOptions, int);
     ~ECWWriteDataset();
 
-    virtual void FlushCache(bool bAtClosing) override;
+    virtual CPLErr FlushCache(bool bAtClosing) override;
 
     virtual CPLErr GetGeoTransform(double *) override;
     virtual CPLErr SetGeoTransform(double *) override;
@@ -1754,7 +1755,7 @@ class ECWWriteDataset final : public GDALDataset
     virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
@@ -1791,6 +1792,7 @@ class ECWWriteRasterBand final : public GDALRasterBand
             SetDescription(ECWGetColorInterpretationName(eInterp, nBand - 1));
         return CE_None;
     }
+
     virtual GDALColorInterp GetColorInterpretation() override
     {
         return eInterp;
@@ -1857,7 +1859,7 @@ ECWWriteDataset::ECWWriteDataset(const char *pszFilenameIn, int nXSize,
 ECWWriteDataset::~ECWWriteDataset()
 
 {
-    FlushCache(true);
+    ECWWriteDataset::FlushCache(true);
 
     if (bCrystalized)
     {
@@ -1882,10 +1884,10 @@ ECWWriteDataset::~ECWWriteDataset()
 /*                             FlushCache()                             */
 /************************************************************************/
 
-void ECWWriteDataset::FlushCache(bool bAtClosing)
+CPLErr ECWWriteDataset::FlushCache(bool bAtClosing)
 
 {
-    BlockBasedFlushCache(bAtClosing);
+    return BlockBasedFlushCache(bAtClosing);
 }
 
 /************************************************************************/
@@ -2030,7 +2032,7 @@ CPLErr ECWWriteDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                   int nXSize, int nYSize, void *pData,
                                   int nBufXSize, int nBufYSize,
                                   GDALDataType eBufType, int nBandCount,
-                                  int *panBandMap, GSpacing nPixelSpace,
+                                  BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                   GSpacing nLineSpace, GSpacing nBandSpace,
                                   GDALRasterIOExtraArg *psExtraArg)
 {
@@ -2274,4 +2276,4 @@ GDALDataset *ECWCreateECW(const char *pszFilename, int nXSize, int nYSize,
                                papszOptions, FALSE);
 }
 
-#endif /* def FRMT_ecw && def HAVE_COMPRESS */
+#endif /* def HAVE_COMPRESS */

@@ -1,6 +1,6 @@
 # Makefile for building a standalone GDAL-plugin for ECW support
 #
-# (c) 2022 Sven Geggus <sven-git@geggus.net>
+# (c) 2022-2025 Sven Geggus <sven-git@geggus.net>
 #
 
 # Adjust these if you are using another Version of the library
@@ -10,7 +10,7 @@ ECW_STATIC = $(HOME)/hexagon/ERDAS-ECW_JPEG_2000_SDK-5.5.0/Desktop_Read-Only/lib
 CXXFLAGS	= -g -O2 -fPIC  -Wall $(USER_DEFS)
 ECW_FLAGS = -DHAVE_ECW_BUILDNUMBER_H -DLINUX -DX86 -DPOSIX -DHAVE_COMPRESS -DECW_COMPRESS_RW_SDK_VERSION
 
-OBJ = ecwdataset.o ecwcreatecopy.o jp2userbox.o ecwasyncreader.o
+OBJ = ecwdataset.o ecwcreatecopy.o jp2userbox.o ecwasyncreader.o ecwdrivercore.o
 
 GDAL_INCLUDE = /usr/include/gdal
 AUTOLOAD_DIR = /usr/lib/x86_64-linux-gnu/gdalplugins
@@ -36,7 +36,7 @@ install-obj:	$(O_OBJ:.o=.$(OBJ_EXT))
 
 install: default
 	install -d $(AUTOLOAD_DIR)
-	cp $(PLUGIN_SO) $(AUTOLOAD_DIR)
+	install -m 755 $(PLUGIN_SO) $(AUTOLOAD_DIR)
 
 $(OBJ) $(O_OBJ): gdal_ecw.h $(HOME)/hexagon
 

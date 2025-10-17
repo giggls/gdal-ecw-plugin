@@ -9,23 +9,7 @@
  * Copyright (c) 2001-2011, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef GDAL_ECW_H_INCLUDED
@@ -39,8 +23,6 @@
 #include "cpl_vsi.h"
 
 #undef NOISY_DEBUG
-
-#ifdef FRMT_ecw
 
 #include "ecwsdk_headers.h"
 
@@ -120,6 +102,7 @@ virtual CNCSError UnParse(class CNCSJP2File &JP2File,
     {
         return nDataLength;
     }
+
     unsigned char *GetData()
     {
         return pabyData;
@@ -140,41 +123,33 @@ class VSIIOStream final : public CNCSJPCIOStream
     VSIIOStream(VSIIOStream &&) = delete;
     VSIIOStream &operator=(VSIIOStream &&) = delete;
 
-    char *m_Filename;
+    char *m_Filename = nullptr;
 
   public:
-    INT64 startOfJPData;
-    INT64 lengthOfJPData;
-    VSILFILE *fpVSIL;
-    BOOLEAN bWritable;
-    BOOLEAN bSeekable;
-    int nFileViewCount;
+    INT64 startOfJPData = 0;
+    INT64 lengthOfJPData = -1;
+    VSILFILE *fpVSIL = nullptr;
+    BOOLEAN bWritable = false;
+    BOOLEAN bSeekable = false;
+    int nFileViewCount = 0;
 
-    int nCOMState;
-    int nCOMLength;
+    int nCOMState = 0;
+    int nCOMLength = 0;
     GByte abyCOMType[2]{};
 
     /* To fix ‘virtual bool NCS::CIOStream::Read(INT64, void*, UINT32)’ was
      * hidden' with SDK 5 */
     using CNCSJPCIOStream::Read;
 
-    VSIIOStream() : m_Filename(nullptr)
+    VSIIOStream()
     {
-        nFileViewCount = 0;
-        startOfJPData = 0;
-        lengthOfJPData = -1;
-        fpVSIL = nullptr;
-        bWritable = false;
-        bSeekable = false;
         if (CSLTestBoolean(CPLGetConfigOption(
                 "GDAL_ECW_WRITE_COMPRESSION_SOFTWARE", "YES")))
             nCOMState = -1;
-        else
-            nCOMState = 0;
-        nCOMLength = 0;
         abyCOMType[0] = 0;
         abyCOMType[1] = 0;
     }
+
     virtual ~VSIIOStream()
     {
         VSIIOStream::Close();
@@ -258,7 +233,7 @@ class VSIIOStream final : public CNCSJPCIOStream
         }
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
         if (CSLTestBoolean(CPLGetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")))
         {
             wchar_t *pwszFilename = CPLRecodeToWChar(
@@ -542,7 +517,7 @@ class CPL_DLL ECWDataset final : public GDALJP2AbstractDataset
     void CleanupWindow();
     CPLErr RunDeferredAdviseRead();
     int TryWinRasterIO(GDALRWFlag, int, int, int, int, GByte *, int, int,
-                       GDALDataType, int, int *, GSpacing nPixelSpace,
+                       GDALDataType, int, const int *, GSpacing nPixelSpace,
                        GSpacing nLineSpace, GSpacing nBandSpace,
                        GDALRasterIOExtraArg *psExtraArg);
     CPLErr LoadNextLine();
@@ -596,13 +571,11 @@ class CPL_DLL ECWDataset final : public GDALJP2AbstractDataset
                              GDALRasterIOExtraArg *psExtraArg);
 
   public:
-    ECWDataset(int bIsJPEG2000);
+    explicit ECWDataset(int bIsJPEG2000);
     ~ECWDataset();
 
     static GDALDataset *Open(GDALOpenInfo *, int bIsJPEG2000);
-    static int IdentifyJPEG2000(GDALOpenInfo *poOpenInfo);
     static GDALDataset *OpenJPEG2000(GDALOpenInfo *);
-    static int IdentifyECW(GDALOpenInfo *poOpenInfo);
     static GDALDataset *OpenECW(GDALOpenInfo *);
 
     void SetPreventCopyingSomeMetadata(int b)
@@ -611,8 +584,9 @@ class CPL_DLL ECWDataset final : public GDALJP2AbstractDataset
     }
 
     virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, int, int *, GSpacing nPixelSpace,
-                             GSpacing nLineSpace, GSpacing nBandSpace,
+                             GDALDataType, int, BANDMAP_TYPE,
+                             GSpacing nPixelSpace, GSpacing nLineSpace,
+                             GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
 
     virtual char **GetMetadataDomainList() override;
@@ -696,14 +670,17 @@ class ECWRasterBand final : public GDALPamRasterBand
     ~ECWRasterBand();
 
     virtual CPLErr IReadBlock(int, int, void *) override;
+
     virtual int HasArbitraryOverviews() override
     {
         return apoOverviews.empty();
     }
+
     virtual int GetOverviewCount() override
     {
         return (int)apoOverviews.size();
     }
+
     virtual GDALRasterBand *GetOverview(int) override;
 
     virtual GDALColorInterp GetColorInterpretation() override;
@@ -740,7 +717,5 @@ int ECWTranslateFromWKT(const OGRSpatialReference *poSRS, char *pszProjection,
 
 CellSizeUnits ECWTranslateToCellSizeUnits(const char *pszUnits);
 const char *ECWTranslateFromCellSizeUnits(CellSizeUnits eUnits);
-
-#endif /* def FRMT_ecw */
 
 #endif /* ndef GDAL_ECW_H_INCLUDED */
